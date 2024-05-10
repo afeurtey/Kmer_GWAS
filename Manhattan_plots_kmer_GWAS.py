@@ -9,12 +9,19 @@ import argparse
 # -----------------------------------
 parser = argparse.ArgumentParser(description='Create Manhattan plot for kmer GWAS. Usage: python Manhattan_plots_kmer_GWAS.py eAUC25C')
 parser.add_argument('condition', type=str, help='Condition to create the Manhattan plot')
+parser.add_argument('genome_suffix', type=str, default = "IPO323")
 A = parser.parse_args()
 
 condition = A.condition #"eAUC22C"
 print(f"\nCreating Manhattan plot for condition: {condition}")
 all_gwas_path =  "/cluster/scratch/afeurtey/Kmer_GWAS/5_GWAS_results/"
 dir_path = all_gwas_path + "GWAS_output_dir_" + condition + "/kmers/"
+
+#Define file names
+blast_results = dir_path + 'output/phenotype_value.assoc_for_fetch.blast_' + A.genome_suffix + '.tsv'
+all_kmers_merged_table = all_gwas_path + 'all_kmers_blast_' + A.genome_suffix + '_' + condition + '.tsv'
+signif_kmers_merged_table = all_gwas_path + 'significant_kmers_blast_' + A.genome_suffix + '_' + condition + '.tsv'
+manhattan_path = all_gwas_path + 'manhattan_plot_' + A.genome_suffix + '_' + condition + '.png'
 
 
 # Read the association file for best 10000 kmers
@@ -38,8 +45,10 @@ plt.show()
 
 plt.savefig(all_gwas_path + 'histogram_pval_' + condition + '.png')
 
+
+# Read the results from the blast search
 columns_names = ["rs", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue bitscore", "lala"]
-pos_df = pd.read_csv(dir_path + 'output/phenotype_value.assoc_for_fetch.blast.tsv', sep='\t', 
+pos_df = pd.read_csv(blast_results, sep='\t', 
                      header=None,  index_col = None, names = columns_names)
 
 pos_df = pos_df[["rs", "sseqid", "sstart", "send"]]
@@ -56,7 +65,10 @@ df2 = pd.merge(pos_df, df, on='rs', how='inner')
 df2 = df2[df2['sseqid'] != 'mt']
 # Create a new column that is the rank of the order of the chromosomes
 df2['chromosome'] = df2['sseqid'].astype('category')
-df2['chromosome'] = df2['chromosome'].astype(int).astype('category')
+try :
+    df2['chromosome'] = df2['chromosome'].astype(int).astype('category')
+except:
+    pass
 df2['chr_index'] = df2['chromosome'].cat.codes
 
 # Calculate cumulative position along the genome
@@ -84,17 +96,18 @@ for chrom, data in df2.groupby('chr_index'):
 plt.axhline(single_value, color='grey', linestyle='dashed', linewidth=2)
 plt.ylabel('-Log10(p-value)')
 plt.xlabel('Position along the genome')
-plt.title('Manhattan plot')
-plt.savefig(all_gwas_path + 'manhattan_plot_IPO323_' + condition + '.png')
+plt.title('Manhattan plot for '+ condition + " on reference " + A.genome_suffix)
+plt.savefig(manhattan_path)
 
-# Safe file with only significant kmers
-df2 = df2[df2['log10_pval'] > single_value]
-df2.to_csv(all_gwas_path + 'significant_kmers_blast_IPO323_' + condition + '.tsv', sep='\t', index=False)
-
-
+# Safe file withall and only significant kmers
+df2.to_csv(all_kmers_merged_table, sep='\t', index=False)
 print(f" -- Found {df[df['log10_pval'] > single_value]['rs'].nunique()} significant kmers.")
+print(f" -- Found {df2['rs'].nunique()} kmers aligning on the genome.")
+
+df2 = df2[df2['log10_pval'] > single_value]
+df2.to_csv(signif_kmers_merged_table, sep='\t', index=False)
 print(f" -- Found {df2['rs'].nunique()} significant kmers aligning on the genome.")
 
-
-print(f"Significant kmers saved to {all_gwas_path + 'significant_kmers_blast_IPO323_' + condition + '.tsv'}")
-print(f"Manhattan plot saved to {all_gwas_path + 'manhattan_plot_IPO323_' + condition + '.png'}")
+print(f"All kmers table saved to {all_kmers_merged_table}")
+print(f"Significant kmers table saved to {signif_kmers_merged_table}")
+print(f"Manhattan plot saved to {manhattan_path}")
