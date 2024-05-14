@@ -5,7 +5,7 @@
 #Usage: sbatch --array=1-123%20 ./KmerGWAS_count_kmers.sh ./Reseq_Silvia_full_read_name.txt
 # temp_read_name.txt is a file with the following format:
 # sample_name read_prefix
-sample_list=$1
+sample_list=$1 #Space separated
 
 
 script_dir=/cluster/home/afeurtey/Silvia/KmerGWAS/

@@ -1,6 +1,16 @@
 # Kmer_GWAS
 
+Running kmers count per sample
+```
+sbatch --array=1-435%20 ./KmerGWAS_count_kmers.sh ./Sample_lists/Eschikon_batch2.txt 
+```
+The step above is very fast. It takes around 10 minutes per sample. 
 
+However, the next step is very very inefficient. For 700 samples, determining which kmers to keep took 24 hours and creating the large table took 5 days. Be prepared to set very long times if needed!
+
+```
+sbatch Commands_kmers_to_GWAS.sh
+```
 
 Creating reference with all PacBio
 ```
@@ -31,3 +41,13 @@ Running blast on all references
 ```
 sh Run_blast_kmers_and_plots.sh ./Phenotypes/Phenotype_temperature_merged_lofoutrem.csv /cluster/scratch/afeurtey/Kmer_GWAS/all_PacBio.fa all_PacBio
 ```
+
+for i in eAUC12C eAUC15C eAUC18C eAUC22C eAUC25C ; do   cat ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_5per | tail -n +2 | cut -f 2 | sed 's
+/_/\t/' | awk '{print ">"$2"\n"$1}' >     ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_5per_for_fetch.fasta ;    if [ -s ${GWAS_dir}GWAS_output_dir_$
+{i}/kmers/pass_threshold_5per_for_fetch.fasta ]; then     blastn         -db /cluster/scratch/afeurtey/Kmer_GWAS/Zymoseptoria_tritici.MG2.dna.toplevel.mt+.fa
+         -query ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_5per_for_fetch.fasta -outfmt 6 >         ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_thre
+shold_5per_for_fetch.blast.tsv ;    fi; done
+
+
+ls /cluster/work/gdc/shared/p723/Ztritici_Kmer_GWAS/Kmer_counts/ -1 | grep -v "dat" > List_done.list
+grep -v -f List_done.list ./KmerGWAS/Sample_lists/allthereads.csv > ./KmerGWAS/Sample_lists/missed_all_reads.csv
