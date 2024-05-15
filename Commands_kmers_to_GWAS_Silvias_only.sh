@@ -9,9 +9,9 @@ working_dir=/cluster/scratch/afeurtey/Kmer_GWAS/4_All_kmers_GWAS/
 # /cluster/scratch/afeurtey/Kmer_GWAS/3_Kmer_count/Algeria_1992_ALA2a/kmers_with_strand   Algeria_1992_ALA2a
 # Examples of commands to produce the file
 # with awk split the path and get last directory name
-# ls -1 /cluster/scratch/afeurtey/Kmer_GWAS/3_Kmer_count/Only_Silvias/*/kmers_with_strand | tail -n +2 |  \
+# ls -1 /cluster/scratch/afeurtey/Kmer_GWAS/3_Kmer_count/Only_Silvias/*/kmers_with_strand |  \
 #   awk 'BEGIN{OFS="\t"} {  split($0, a, "/"); print $0, a[8] }'  \
-#   > ${working_dir}Silvias_kmers_list_paths.txt #no_kmers.list
+#   > /cluster/scratch/afeurtey/Kmer_GWAS/4_All_kmers_GWAS/Silvias_kmers_list_paths.txt #no_kmers.list
 
 #ll /cluster/scratch/afeurtey/Kmer_GWAS/3_Kmer_count/ | tail -n +2 | \
 #  awk '{printf "/cluster/scratch/afeurtey/Kmer_GWAS/3_Kmer_count/%s/kmers_with_strand\t%s\n", $NF,$NF}' \
