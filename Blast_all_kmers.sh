@@ -21,3 +21,4 @@ if [ -s ${GWAS_dir}GWAS_output_dir_${i}/kmers/output/phenotype_value.assoc_for_f
       ${GWAS_dir}GWAS_output_dir_${i}/kmers/output/phenotype_value.assoc_for_fetch.blast_${blastdb_suffix}.tsv ; 
 fi
 
+#
