@@ -29,25 +29,30 @@ do
     #Increment the column index
     c=$((c+1))
 
+    # if [ $c -lt 57 ]; then
+    #     continue
+    # fi
     echo -e "accession_id\tphenotype_value" > ${GWAS_dir}phenotypes_${i}.pheno
     #cut -f 1,$c -d "," $phenotype_file | tail -n +2 | grep -v ",NA" | sed 's/,/\t/' >> ${GWAS_dir}phenotypes_${i}.pheno
     cut -f 1,$c -d "," $phenotype_file | tail -n +2 | grep -v ",NA" | grep -v ",$" | sed 's/,/\t/' >> ${GWAS_dir}phenotypes_${i}.pheno
     python2 /cluster/home/afeurtey/Silvia/KmerGWAS/voichek_kmersGWAS/kmers_gwas.py \
     --pheno ${GWAS_dir}phenotypes_${i}.pheno \
-    --kmers_table ${working_dir}kmers_table \
+    --kmers_table ${working_dir}Silvias_kmers_table \
     -l 31 -p 8 --mac 10 \
-    --outdir ${GWAS_dir}GWAS_output_dir_${i}
+    --outdir ${GWAS_dir}Silvias_GWAS_output_dir_${i}
 
-  cat ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_10per | tail -n +2 | cut -f 2 | sed 's/_/\t/' | awk '{print ">"$2"\n"$1}' > \
-    ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_10per_for_fetch.fasta ; 
+  cat ${GWAS_dir}Silvias_GWAS_output_dir_${i}/kmers/pass_threshold_10per | tail -n +2 | cut -f 2 \
+    | sed 's/_/\t/' | awk '{print ">"$2"\n"$1}' > \
+    ${GWAS_dir}Silvias_GWAS_output_dir_${i}/kmers/pass_threshold_10per_for_fetch.fasta ; 
 
   if [ -s ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_10per_for_fetch.fasta ]; then
-    # Blast the kmers on the reference genome
+    # Blast the significant kmers on the reference genome
     module load gcc/8.2.0 blast-plus/2.12.0
     blastn \
         -db /cluster/scratch/afeurtey/Kmer_GWAS/Zymoseptoria_tritici.MG2.dna.toplevel.mt+.fa \
-        -query ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_10per_for_fetch.fasta -outfmt 6 > \
-        ${GWAS_dir}GWAS_output_dir_${i}/kmers/pass_threshold_10per_for_fetch.blast.tsv ; 
+        -query ${GWAS_dir}Silvias_GWAS_output_dir_${i}/kmers/pass_threshold_10per_for_fetch.fasta -outfmt 6 > \
+        ${GWAS_dir}Silvias_GWAS_output_dir_${i}/kmers/pass_threshold_10per_for_fetch.blast.tsv ; 
+
   fi
 done
 

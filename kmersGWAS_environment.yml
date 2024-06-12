@@ -20,6 +20,7 @@ dependencies:
   - beautifulsoup4=4.12.3=pyha770c72_0
   - binutils_impl_linux-64=2.40=ha885e6a_0
   - binutils_linux-64=2.40=hdade7a5_3
+  - biopython=1.83=py311h459d7ec_0
   - bleach=6.1.0=pyhd8ed1ab_0
   - brotli=1.1.0=hd590300_1
   - brotli-bin=1.1.0=hd590300_1

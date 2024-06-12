@@ -10,12 +10,13 @@ import argparse
 parser = argparse.ArgumentParser(description='Create Manhattan plot for kmer GWAS. Usage: python Manhattan_plots_kmer_GWAS.py eAUC25C')
 parser.add_argument('condition', type=str, help='Condition to create the Manhattan plot')
 parser.add_argument('genome_suffix', type=str, default = "IPO323")
+parser.add_argument('GWAS_dir_path', type=str, default = "Silvias_GWAS_output_dir_")
 A = parser.parse_args()
 
 condition = A.condition #"eAUC22C"
 print(f"\nCreating Manhattan plot for condition: {condition}")
-all_gwas_path =  "/cluster/scratch/afeurtey/Kmer_GWAS/5_GWAS_results/"
-dir_path = all_gwas_path + "GWAS_output_dir_" + condition + "/kmers/"
+all_gwas_path =  A.GWAS_dir_path + condition + "/"
+dir_path = A.GWAS_dir_path + condition + "/kmers/"
 
 #Define file names
 blast_results = dir_path + 'output/phenotype_value.assoc_for_fetch.blast_' + A.genome_suffix + '.tsv'
