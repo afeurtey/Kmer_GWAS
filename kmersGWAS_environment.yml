@@ -1,5 +1,6 @@
 name: kmersGWAS
 channels:
+  - r
   - anaconda
   - conda-forge
 dependencies:
@@ -28,11 +29,11 @@ dependencies:
   - bwidget=1.9.14=ha770c72_1
   - bzip2=1.0.8=hd590300_5
   - c-ares=1.28.1=hd590300_0
-  - ca-certificates=2024.2.2=hbcca054_0
+  - ca-certificates=2024.6.2=hbcca054_0
   - cached-property=1.5.2=hd8ed1ab_1
   - cached_property=1.5.2=pyha770c72_1
   - cairo=1.18.0=h3faef2a_0
-  - certifi=2024.2.2=pyhd8ed1ab_0
+  - certifi=2024.6.2=pyhd8ed1ab_0
   - cffi=1.16.0=py311hb3a22ac_0
   - charset-normalizer=3.3.2=pyhd8ed1ab_0
   - comm=0.1.2=py311h06a4308_0
@@ -190,7 +191,7 @@ dependencies:
   - nss=3.98=h1d7d5a4_0
   - numpy=1.26.4=py311h64a7726_0
   - openjpeg=2.5.2=h488ebb8_0
-  - openssl=3.3.0=hd590300_0
+  - openssl=3.3.1=h4ab18f5_0
   - overrides=7.7.0=pyhd8ed1ab_0
   - packaging=23.1=py311h06a4308_0
   - pandas=2.2.2=py311h320fe9a_0
@@ -230,6 +231,7 @@ dependencies:
   - pyzmq=24.0.1=py311ha4b6469_1
   - qt-main=5.15.8=hc9dc06e_21
   - r-base=4.3.3=hf0d99cb_1
+  - r-mass=7.3_60=r43h76d94ec_0
   - readline=8.2=h8228510_1
   - referencing=0.35.1=pyhd8ed1ab_0
   - requests=2.31.0=pyhd8ed1ab_0
