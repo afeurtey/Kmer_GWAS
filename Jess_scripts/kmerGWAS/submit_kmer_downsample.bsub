@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --job-name=DS    		# Job name
+#SBATCH --mem-per-cpu=1000      # Memory per node in MB
+#SBATCH --cpus-per-task=1       # Number of CPU cores per task
+#SBATCH --time=1:00:00          # Walltime
+#SBATCH --output=DS.out
+#SBATCH --error=DS.err
+
+# from /cluster/scratch/stapleyj/mapKmers
+
+while read p; do
+
+awk -F ',' '$9>1.0e-8 {print}' halo_res_chr${p}.csv > notsig.csv
+awk -F ',' '$9<1.0e-8 {print}' halo_res_chr${p}.csv > sig.csv
+awk -F ',' 'NR%100==0' notsig.csv > ds_notsig.csv
+cat ds_notsig.csv sig.csv > halo_res_chr${p}_DS.csv
+
+done<chr_list.txt
+

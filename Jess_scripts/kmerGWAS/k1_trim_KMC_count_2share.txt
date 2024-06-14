@@ -1,0 +1,130 @@
+# kmer counting 
+
+Kmers were counted with KMC following recomendations from (https://github.com/voichek/kmersGWAS). 
+Using these kmer counts I performed the GWAS in R with Gapit (https://github.com/jiabowang/GAPIT)
+https://github.com/jessstapley/CercosporaGWAS/blob/main/KmerGWAS_GAPIT.md
+
+
+
+# count kmers on TRIMMED  fastq.gz files
+
+# trim sequences and save to /trim
+cd /cluster/scratch/stapleyj/
+
+
+# with 1Gb n=2
+sbatch < submit_trimmomatic_bg.bsub
+# 51206333
+
+
+
+########################################################################
+######## kmer counting kmer31 and getting histogram
+########################################################################
+
+
+#trimmed fastq files
+/cluster/scratch/stapleyj/trim
+
+cat > submit_KMC_count.bsub
+
+### new software stack
+env2lmod 
+
+sbatch < submit_KMC_count.bsub
+# 51846056 3 test for 2
+
+sbatch < submit_KMC_count.bsub
+# 52866448
+
+
+# checking output
+cd /cluster/scratch/stapleyj/kmer/kmer_out
+ls -l */kmers_with_strand > filesize.list
+scp stapleyj@euler.ethz.ch://cluster/scratch/stapleyj/kmer/kmer_out/filesize.list ~/Dropbox/PlantPathogen/Zymo_Halo/kmer_GWAS/data
+
+
+ls kmer_out/*/output_kmc_cannon.kmc_pre > kmc_pre.files
+wc kmc_pre.files
+# 260
+
+scp stapleyj@euler.ethz.ch://cluster/scratch/stapleyj/kmer/kmc_pre.files ~/Dropbox/PlantPathogen/Zymo_Halo/kmer_GWAS/data
+
+####### make a list of paths for each strand info file
+
+ls -r /cluster/scratch/stapleyj/kmer/kmer_out/*/kmers_with_strand  > kmers_list_paths.txt
+
+#  edit on BBEdit
+# two columns - one with the path and file name, the other with seq.id
+e.g
+/cluster/scratch/stapleyj/kmer/kmer_out/D95_c1_119_6B1_L2/kmers_with_strand	D95_c1_119_6B1_L2
+/cluster/scratch/stapleyj/kmer/kmer_out/D546_c3_709_6A1_L2/kmers_with_strand	D546_c3_709_6A1_L2
+/cluster/scratch/stapleyj/kmer/kmer_out/D542_c3_709_1A1_L3/kmers_with_strand	D542_c3_709_1A1_L3
+/cluster/scratch/stapleyj/kmer/kmer_out/D537_c3_640_5A1_L4/kmers_with_strand	D537_c3_640_5A1_L4
+/cluster/scratch/stapleyj/kmer/kmer_out/D536_c3_640_4A1_L2/kmers_with_strand	D536_c3_640_4A1_L2
+
+
+scp stapleyj@euler.ethz.ch://cluster/scratch/stapleyj/kmer/kmers_list_paths.txt ~/Dropbox/PlantPathogen/Zymo_Halo/kmer_GWAS/
+
+scp ~/Dropbox/PlantPathogen/Zymo_Halo/kmer_GWAS/kmers_list_paths.txt stapleyj@euler.ethz.ch://cluster/scratch/stapleyj/kmer/
+#  261   524 25994 kmers_list_paths.txt
+
+
+
+######################  making kmer tables....
+### need old software stack
+
+cd /cluster/scratch/stapleyj/kmer
+module load new gcc/5.2.0 gdc
+
+sbatch --time=24:00:00 --wrap="bin/list_kmers_found_in_multiple_samples -l kmers_list_paths.txt -k 31 --mac 5 -p 0.2 -o kmers_to_use"
+# 52902497
+
+less slurm-52902497.out
+slurmstepd: error: *** JOB 52902497 ON eu-g9-046-2 CANCELLED AT 2024-03-27T18:41:37 DUE TO TIME LIMIT ***
+1065 / 5000
+
+
+# restart with 24 hours 52989147
+
+less slurm-52989147.out
+# kmers lower than MAC:   0
+# passed kmers:   117055879
+# passed MAC bot not pass strand filter:  9386150
+
+
+sbatch --time=12:00:00 --wrap="bin/build_kmers_table -l kmers_list_paths.txt -k 31 -a kmers_to_use -o kmers_table"
+# 53852133
+
+2142 / 5000     :       0001101101101010111001111101010101100110110011110100010101110100
+slurmstepd: error: *** JOB 53852133 ON eu-g9-046-1 CANCELLED AT 2024-04-05T22:46:41 DUE TO TIME LIMIT ***
+
+
+sbatch --time=120:00:00 --wrap="bin/build_kmers_table -l kmers_list_paths.txt -k 31 -a kmers_to_use -o kmers_table"
+# 54194259
+# finished ...
+5001 / 5000     :       0100000000000011010001101101110001011101011000111001000010010110
+Wrote: kmers=0  pa words=0      container size=0        hash-map size=0
+close file
+
+5.3G Apr  9 07:04 kmers_table.table
+
+cp kmers_table*  /cluster/work/gdc/shared/p1053/kmer/
+cp kmers_to_use*  /cluster/work/gdc/shared/p1053/kmer/
+cp kmers_list_paths.txt  /cluster/work/gdc/shared/p1053/kmer/
+
+
+########## kmer stats 
+
+cd /cluster/scratch/stapleyj/kmer/kmer_out
+
+sbatch < submit_kmer_stats_loop.bsub
+# 54326171
+
+cat *.dat > halo_kmerStats.txt
+rm *.dat
+
+
+scp 'stapleyj@euler.ethz.ch://cluster/scratch/stapleyj/kmer/kmer_out/halo_kmerStats.txt' ~/Dropbox/PlantPathogen/Zymo_Halo/kmer_GWAS/data
+
+

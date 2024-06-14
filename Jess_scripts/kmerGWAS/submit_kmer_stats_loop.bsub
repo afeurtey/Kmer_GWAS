@@ -1,0 +1,27 @@
+#!/bin/bash
+#SBATCH --job-name=kmerStat     # Job name
+#SBATCH --mem-per-cpu=1000      # Memory per node in MB
+#SBATCH --cpus-per-task=1       # Number of CPU cores per task
+#SBATCH --time=1:00:00          # Walltime
+#SBATCH --output=kmerStat.out
+#SBATCH --error=kmerStat.err
+
+while read p; do
+
+grep 'No. of unique k-mers' "$p"/kmc_all.1 |  awk '{print $6}' > "$p".unKmer
+grep 'No. of unique counted k-mers'  "$p"/kmc_all.1 |  awk '{print $7}' > "$p".unCountKmer
+grep 'Total no. of k-mers'  "$p"/kmc_all.1 |  awk '{print $6}' > "$p".totKmer 
+grep 'Total no. of reads'  "$p"/kmc_all.1|  awk '{print $6}' > "$p".reads
+grep 'Total no. of super-k-mers'  "$p"/kmc_all.1 |  awk '{print $6}' > "$p".superkmer
+echo "$p" > "$p".name
+
+paste "$p".name "$p".unKmer "$p".unCountKmer "$p".totKmer  "$p".reads "$p".superkmer | column -s $'\t' -t > "$p"_all.dat
+
+rm "$p".unKmer
+rm "$p".unCountKmer
+rm "$p".totKmer
+rm "$p".reads
+rm "$p".superkmer
+rm "$p".name
+
+done</cluster/scratch/stapleyj/kmer/kmer_out/kmer_file.list

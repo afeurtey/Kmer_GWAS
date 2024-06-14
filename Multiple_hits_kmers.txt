@@ -78,7 +78,7 @@ Block_4 (day4_12C_Americas, day4_12C)  - mapping on chr2 of Arg00 (2430100) and 
 2 ACTCGGAGTCGTGGTACTCCATCCTCCCGTC
 2 CTCGGAGTCGTGGTACTCCATCCTCCCGTCA
 
-Block_5 (day4_12C_Americas, day4_12C) - mapping on chr2 of all (to check, but most if not all) refs but Arg00 and KE94
+Block_5 (day4_12C_Americas, day4_12C) - mapping on chr2 of all refs but Arg00 and KE94 in version TTCC and only these two for allele TCCC
 2 ACCACCGAAGCTCATCCAACTGGCGTTGCTC
 2 CCACCGAAGCTCATCCAACTGGCGTTGCTCC
 2 CACCGAAGCTCATCCAACTGGCGTTGCTCCC
@@ -368,7 +368,7 @@ Block_24 (day4_15C_Americas, day4_18C_Americas, eAUC18C_Americas)
 3 AGCGGAAATCACCCTCCCGCAAAAAGCAGAC
 3 CGGAAATCACCCTCCCGCAAAAAGCAGACGA
 
-Block_25 (Std_grey0C_08dpi, Std_grey30C_08dpi)
+Block_25 (Std_grey0C_08dpi, Std_grey30C_08dpi) - probably repeat - found on many chromosomes
 2 ATTTCGTAGAACACGAGAGGGCTAACTACAC
 2 TTCGTAGAACACGAGAGGGCTAACTACACAA
 2 TCGTAGAACACGAGAGGGCTAACTACACAAA

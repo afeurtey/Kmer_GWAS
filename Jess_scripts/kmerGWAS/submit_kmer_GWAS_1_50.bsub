@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH --job-name=gapit1_50     		# Job name
+#SBATCH --mem-per-cpu=10000      # Memory per node in MB
+#SBATCH --cpus-per-task=1       # Number of CPU cores per task
+#SBATCH --time=24:00:00          # Walltime
+#SBATCH --output=gapit1_50.out
+#SBATCH --error=gapit1_50.err
+
+lmod2env
+module load new r/3.6.0
+
+# make directories in gapit_out
+
+# mkdir gapit_out/res{1..50}
+
+# R 
+R CMD BATCH --no-restore --no-save kmer_gapitGWAS_1_50.R ./gapit1_50.log
+
+cd gapit_out
+
+cat res*/GAPIT.Association.GWAS_Results.MLM.X0.csv > MLM_res1_50

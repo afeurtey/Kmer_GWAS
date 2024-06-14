@@ -1,0 +1,11 @@
+#!/bin/bash
+#SBATCH --job-name=vcf2hpmt     # Job name
+#SBATCH --mem-per-cpu=10000      # Memory per node in MB
+#SBATCH --cpus-per-task=2       # Number of CPU cores per task
+#SBATCH --time=24:00:00          # Walltime
+#SBATCH --output=vcf2hpmt.out
+#SBATCH --error=vcf2hpmt.err
+
+module load new r/3.6.0
+
+R CMD BATCH --no-restore --no-save kmer_vcf_2_hapmap.R ./vcf2hpmt.log

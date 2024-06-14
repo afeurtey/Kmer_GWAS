@@ -1,0 +1,207 @@
+########### map kmers
+
+#### results in csv file (2.5G)
+# could add a column with row numbers - to number the kmers - might be easier when pairing the positon with the gapit results..
+cd /cluster/scratch/stapleyj/gwas_kmer/gapit_out/
+
+nl filename - need comma separated 
+
+awk -F',' 'BEGIN{OFS=","} {$1=NR FS $1; print}' halo_MLM.csv > halo_MLM_nl.csv
+
+less halo_MLM_nl.csv
+
+# last line/wc 22134224
+
+# wc for vcf
+65179221 17207312776 69741764360 /cluster/work/gdc/shared/p1053/kmer/gwas/kmer_plink_halo24all.vcf
+
+# many MAF filtered
+65179221-22134224
+# 43044997 maf 0.05
+
+0.05*252 # 12 about half of the halo samples must have the allele/kmer...
+
+################# map with BOWTIE
+######### make genome bowtie files 
+
+# genome /cluster/work/gdc/shared/p1053/Genome/Zymoseptoria_tritici.MG2.dna.toplevel_chrN.fa
+
+cd /cluster/scratch/stapleyj/mapKmers
+
+module load gcc/4.8.2 gdc bowtie2/2.3.2
+bowtie2-build -f /cluster/work/gdc/shared/p1053/Genome/Zymoseptoria_tritici.MG2.dna.toplevel_chrN.fa ZymoMG2_chrN
+
+# get other genomes.... 
+
+# chr names .
+/cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_1A5.fa
+>1A5.chr_1
+/cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_1E4.fa
+>1E4.chr_1
+/cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_3D1.fa
+>3D1.chr_1
+/cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_3D7.fa
+>3D7.chr_1
+
+cd /cluster/scratch/stapleyj/mapKmers/ref_1A5
+module load gcc/4.8.2 gdc bowtie2/2.3.2
+bowtie2-build -f /cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_1A5.fa Zymo_1A5
+
+/cluster/scratch/stapleyj/mapKmers/ref_1E4
+bowtie2-build -f /cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_1E4.fa Zymo_1E4
+
+/cluster/scratch/stapleyj/mapKmers/ref_3D1
+bowtie2-build -f /cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_3D1.fa Zymo_3D1
+
+/cluster/scratch/stapleyj/mapKmers/ref_3D7
+bowtie2-build -f /cluster/work/gdc/people/stapleyj/Genomes/Ztri/ST99CH_3D7.fa Zymo_3D7
+
+
+#####################
+
+# split the result files
+# gapit results 
+cp /cluster/scratch/stapleyj/gwas_kmer/gapit_out/halo_MLM_nl.csv .
+
+mkdir split_files
+
+split -d -l 200000 halo_MLM_nl.csv split_files/gres
+# ~110 files..
+
+#  make a small file cat > test_conversion.csv
+awk -F',' '{print ">"$1"\n"$2}' test_conversion.csv > test_conversion.fa
+
+bowtie2 -f -D 24 -R 3 -N 0 -L 30 -i S,1,0.30 -x ZymoMG2_chrN -U test_conversion.fa > test3.out
+
+#### 
+
+cd /cluster/scratch/stapleyj/mapKmers/split_files
+
+ls split_files/ > kmer_split.list
+mkdir fa_files
+
+#### make splitting file
+cat > csv_to_fa.sh
+
+#!/bin/bash
+
+# Input text file containing list of input CSV files
+input_list="kmer_split.list"
+
+# Check if the input list file exists
+if [ ! -f "$input_list" ]; then
+    echo "Input list file $input_list not found. Exiting..."
+    exit 1
+fi
+
+# Loop over input files listed in the text file
+while IFS= read -r input_file; do
+    # Check if the file exists
+    if [ ! -f "$input_file" ]; then
+        echo "File $input_file not found. Skipping..."
+        continue
+    fi
+    
+    # Output file name based on input file name
+    output_file="${input_file}.fa"
+
+    # Extract first two columns and format as desired
+    awk -F',' '{print ">"$1"\n"$2}' "$input_file" > fa_files/"$output_file"
+
+    echo "Output saved to $output_file"
+done < "$input_list"
+
+chmod +x csv_to_fa.sh
+
+./csv_to_fa.sh
+
+# looks good.....
+
+
+############ mapping kmers with bowtie
+
+######### IPO reference
+
+cd /cluster/scratch/stapleyj/mapKmers
+module load gcc/4.8.2 gdc bowtie2/2.3.2
+
+# write submission script.....
+
+cd /cluster/scratch/stapleyj/mapKmers
+# fa_file.list
+
+sbatch < submit_bowtie_kmer.bsub
+# 55376010
+
+# looks like it has worked ....
+
+cat pos_gres*fa_q1.txt > halo_gwasRes_pos.txt
+
+wc  halo_gwasRes_pos.txt
+# 17276272
+
+cp halo_gwasRes_pos.txt /cluster/work/gdc/shared/p1053/kmer/gwas
+
+while read p; do
+grep -wF "$p" halo_gwasRes_pos.txt 
+done<sigKmer.list
+
+######### 1A5 reference
+
+/cluster/scratch/stapleyj/mapKmers/ref_1A5
+
+cat >  submit_bowtie_kmer_1A5.bsub
+sbatch < submit_bowtie_kmer_1A5.bsub
+# 55620068
+
+cat bt_map/pos_gres*.fa_q1.txt > halo_kmer_1A5pos.txt
+wc  halo_kmer_1A5pos.txt
+# 17161319
+cp halo_kmer_1A5pos.txt /cluster/work/gdc/shared/p1053/kmer/gwas
+
+while read p; do
+grep -wF "$p" halo_kmer_1A5pos.txt 
+done<../sigKmer.list
+
+cat > sigKmer_1A5mapped.txt
+wc  sigKmer_1A5mapped.txt
+# 9   
+cp sigKmer_1A5mapped.txt /cluster/work/gdc/shared/p1053/kmer/gwas
+
+
+# Input tab-delimited file
+input_file="halo_kmer_1A5pos.txt"
+
+# Output CSV file
+output_file="halo_kmer_1A5pos.csv"
+
+# convert to csv
+awk 'BEGIN {FS="\t"; OFS=","} {$1=$1}1' "$input_file" > "$output_file"
+
+##### merge gwas results file with the mapping file - matching no kmer number..
+# warning - this will print matching rows to screen - should edit this ... 
+
+halo_file="halo_kmer_1A5pos.csv"
+mlm_file="../halo_MLM_nl.csv"
+output_file="halo_gwasRes_1A5pos.csv"
+
+# Perform the merge using awk
+awk 'BEGIN {FS = OFS = ","} # Set input and output field separators to comma
+    NR == FNR {             # Process the first file (halo_gwasRes_pos.csv)
+        a[$1]=$0            # Store entire line indexed by the first field
+        next
+    }
+    {
+        if ($1 in a) {       # If the first field from the second file exists in the array from the first file
+            print "Found match for line", NR, "from", FILENAME > "/dev/stderr"
+            print "halo_line:", a[$1] > "/dev/stderr"
+            print "mlm_line:", $0 > "/dev/stderr"
+            print a[$1], $0              # Output to the output file
+        }
+    }' "$halo_file" "$mlm_file" > "$output_file"
+
+echo "Merged file saved to $output_file"
+wc halo_gwasRes_1A5pos.csv
+# 17161319
+cp halo_gwasRes_1A5pos.csv /cluster/work/gdc/shared/p1053/kmer/gwas
+

@@ -1,0 +1,206 @@
+###### convert kmer files to plink files
+
+# need to make plink files then convert to vcf and then hapmap 
+
+# module load new gcc/5.2.0 gdc
+
+#################################################
+####### make plink files from kmer files
+#################################################
+
+# on scratch make a new installation of the gwas package - casue some files have been deleted
+cd /cluster/scratch/stapleyj/gwas_kmer/
+mkdir gwas_kmer
+
+wget https://github.com/voichek/kmersGWAS/releases/download/v0.2-beta/v0_2_beta.zip
+unzip v0_2_beta.zip
+
+# need pheno file
+
+cat > halo_pheno24.txt
+# copy data
+# 254 - remove duplicates and remove two samples with high gscope het.
+
+cat > halo_pheno24_all.txt
+# all sampled
+
+mkdir /cluster/work/gdc/shared/p1053/kmer/gwas
+cp halo_pheno24.txt /cluster/work/gdc/shared/p1053/kmer/gwas/
+cp halo_pheno24_all.txt /cluster/work/gdc/shared/p1053/kmer/gwas/
+
+
+cd /cluster/scratch/stapleyj/gwas_kmer/
+module load new gcc/5.2.0 gdc
+sbatch --time=4:00:00 --wrap="bin/kmers_table_to_bed -t ../kmer/kmers_table -k 31 -p halo_pheno24.txt --maf 0.05 --mac 3 -b 8000000000 -o kmer_halo24"
+# 54293737
+# killed 
+
+# tried running on active node 
+bin/kmers_table_to_bed -t ../kmer/kmers_table -k 31 -p halo_pheno24.txt --maf 0.05 --mac 3 -b 8000000000 -o kmer_plink_halo24
+
+# seemed to work fairly quick
+# e.g. kmer_plink_halo24.0.fam
+
+cp kmer_plink_halo24* /cluster/work/gdc/shared/p1053/kmer/gwas/
+
+bin/kmers_table_to_bed -t ../kmer/kmers_table -k 31 -p halo_pheno24_all.txt --maf 0.05 --mac 3 -b 8000000000 -o kmer_plink_halo24_all
+cp kmer_plink_halo24_all* /cluster/work/gdc/shared/p1053/kmer/gwas/
+
+
+##########################################
+####### make vcf
+##########################################
+cd /cluster/work/gdc/shared/p1053/kmer/gwas/
+
+module spider plink
+/cluster/project/gdc/shared/scripts/modepend plink
+module load gcc/4.8.2 gdc zlib/1.2.8 openblas/0.2.13_seq plink/1.90
+
+cd /cluster/work/gdc/shared/p1053/kmer/gwas/
+
+# If you use the --1 flag, 0 is interpreted as unaffected status instead, while 1 maps to affected. 
+
+# convert to vcf file....
+# kmer_plink_halo24.0
+
+plink --bfile kmer_plink_halo24.0 --1 --allow-no-sex --recode vcf-iid --out kmer_plink_halo24.0
+
+32101 MB RAM detected; reserving 16050 MB for main workspace.
+64976027 variants loaded from .bim file.
+253 people (0 males, 0 females, 253 ambiguous) loaded from .fam.
+
+253 phenotype values loaded from .fam.
+Using 1 thread (no multithreaded calculations invoked).
+Before main variant filters, 253 founders and 0 nonfounders present.
+Calculating allele frequencies... done.
+64976027 variants and 253 people pass filters and QC.
+Among remaining phenotypes, 21 are cases and 232 are controls.
+--recode vcf-iid to kmer_plink_halo24.0.vcf ... done.
+Warning: At least one VCF allele code violates the official specification;
+other tools may not accept the file.  (Valid codes must either start with a
+'<', only contain characters in {A,C,G,T,N,a,c,g,t,n}, be an isolated '*', or
+represent a breakend.)
+
+plink --bfile kmer_plink_halo24_all.0 --1 --allow-no-sex --recode vcf-iid --out kmer_plink_halo24all
+
+32101 MB RAM detected; reserving 16050 MB for main workspace.
+65,179,214 variants loaded from .bim file.
+255 people (0 males, 0 females, 255 ambiguous) loaded from .fam.
+Ambiguous sex IDs written to kmer_plink_halo24all.nosex .
+255 phenotype values loaded from .fam.
+Using 1 thread (no multithreaded calculations invoked).
+Before main variant filters, 255 founders and 0 nonfounders present.
+Calculating allele frequencies... done.
+65179214 variants and 255 people pass filters and QC.
+Among remaining phenotypes, 22 are cases and 233 are controls
+--recode vcf-iid to kmer_plink_halo24all.vcf ... done.
+Warning: At least one VCF allele code violates the official specification;
+other tools may not accept the file.  (Valid codes must either start with a
+'<', only contain characters in {A,C,G,T,N,a,c,g,t,n}, be an isolated '*', or
+represent a breakend.)
+
+
+### 65 million kmers....
+
+
+##########################################
+####### split vcf file and make many hapmap files for GAPIT
+##########################################
+
+cd /cluster/scratch/stapleyj/gwas_kmer
+cp /cluster/work/gdc/shared/p1053/kmer/gwas/kmer_plink_halo24all.vcf .
+
+head -7 kmer_plink_halo24all.vcf > header.vcf
+sed 1,7d kmer_plink_halo24all.vcf > vcf_noheader.txt
+
+mkdir split_files_all
+
+split -d -l 200000 vcf_noheader.txt sub && for X in sub*; do { cat header.vcf "$X"; } > split_files_all/$X.txt; done
+
+mkdir hmp_files_all
+ls split_files_all/*.txt > file.list
+# 
+
+
+##################mamke R script to make hapmap files for gapit 
+
+cat > kmer_vcf_2_hapmap.R
+
+library(vcfR)
+fl <- scan("file.list", what="character")
+# Read 325 items
+
+for (i in fl){
+	fn <- gsub("split_files_all/", "", i)
+	vcf_file <-  i
+	vcf <- read.vcfR(vcf_file, verbose = FALSE)
+	myHapMap <- vcfR2hapmap(vcf)
+	write.table(myHapMap, file = paste0("hmp_files_all/",fn), sep = "\t", row.names = FALSE, col.names = FALSE) 
+	}
+q()
+
+###########
+
+/cluster/scratch/stapleyj/gwas_kmer
+
+sbatch < submit_R_vcf2hapmap.bsub
+# 54433458
+
+
+ls hmp_files/ | wc
+# 325
+
+# for all samples... 
+sbatch < submit_R_vcf2hapmap.bsub
+
+ls hmp_files_all/ | wc
+# 54827810
+ 
+
+#################### need to add chromosome number to get GWAS to run properly.
+
+# column 3 has the chromosome number 
+awk -F"\t" '{OFS=FS}{ $3="1" ; print   }' test.hmp.txt  > test_chrN.hmp.txt
+
+
+for file in sub*; do
+    # Get the prefix of the file name (e.g., sub1, sub2, etc.)
+    prefix=$(basename "$file")
+
+    # Define the output file name
+    output_file="chrN_${prefix}"
+
+    # Apply awk command to modify the file and write to the output file
+    awk -F"\t" '{OFS=FS}{ $3="1" ; print }' "$file" > "hmp_chrN_files/$output_file"
+	
+    # Optionally, you can display a message for each file processed
+    echo "Processed $file"
+done
+
+cd /cluster/scratch/stapleyj/gwas_kmer
+
+# files made ...chrN_sub9225.txt.txt.txt
+a few too many .txt
+
+cd hmp_files_all/hmp_chrN_files/
+
+for file in chrN_sub*.txt.txt; do
+    mv "$file" "${file%.txt.txt}.txt"
+done
+
+# files ..
+hmp_files_all/hmp_chrN_files/chrN_sub9166.txt.txt
+
+
+#################### copy to project and to local
+
+cd /cluster/scratch/stapleyj/gwas_kmer/hmp_files_all/
+tar -czvf hmp_chrN_files_all.tar.gz hmp_chrN_files
+
+cp hmp_chrN_files_all.tar.gz /cluster/work/gdc/shared/p1053/kmer/gwas/
+
+
+
+
+
+

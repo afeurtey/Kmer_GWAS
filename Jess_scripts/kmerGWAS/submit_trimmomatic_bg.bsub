@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH --job-name=trim     	# Job name
+#SBATCH --array=3-234%5          # hl 234
+#SBATCH --mem-per-cpu=10000      # Memory per node in MB
+#SBATCH --cpus-per-task=2       # Number of CPU cores per task
+#SBATCH --time=1:00:00          # Walltime
+#SBATCH --output=trim.out
+#SBATCH --error=trim.err
+
+
+# new software stack
+
+module load gcc/4.8.2 gdc java/1.8.0_73 trimmomatic/0.35 
+OMP_NUM_THREADS=2
+
+adaptor=/cluster/apps/gdc/trimmomatic/0.35/adapters/TruSeq3-PE.fa
+
+IDX=$SLURM_ARRAY_TASK_ID
+name=$(sed -n ${IDX}p < /cluster/work/gdc/shared/p1053/ZtCH_bg_seq.list)
+
+data=/cluster/work/gdc/shared/p1053/Ztritici_Eschikon2016/0_raw_data/
+out=/cluster/scratch/stapleyj/trim
+
+trimmomatic PE -threads 2 -phred33 ${data}/${name}_1.fq.gz ${data}/${name}_2.fq.gz ${out}/${name}.R1.trim.fq.gz ${out}/logs/${name}.R1.un.fq.gz ${out}/${name}.R2.trim.fq.gz ${out}/logs/${name}.R2.un.fq.gz ILLUMINACLIP:${adaptor}:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:50 > ${out}/logs/${name}.trimmo.log  2> ${out}/logs/${name}.trimmo.err
+
