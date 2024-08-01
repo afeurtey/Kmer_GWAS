@@ -88,7 +88,8 @@ def main():
     ## Creating kinship matrix specific to used accessions
     paths["pheno_intersected_fn"] = "%s/%s.phenotypes" % (args.outdir, base_created_files)
     paths["kinship_fn"] = "%s/%s.kinship" % (args.outdir, base_created_files)
-    cur_cmd = "python2.7 %s --pheno %s --fam_file %s --kinship_file %s --output_pheno  %s " + \
+    #AF: changed path
+    cur_cmd = "python %s --pheno %s --fam_file %s --kinship_file %s --output_pheno  %s " + \
             "--output_kinship %s --DBs_list %s"
     cur_cmd = cur_cmd % (paths["kinship_intersect_script"], paths["pheno_orig_fn"], paths["snps_fam"], 
             paths["original_kinship_fn"], paths["pheno_intersected_fn"], paths["kinship_fn"], args.kmers_table+".names")
