@@ -1,0 +1,784 @@
+---
+title: "Kmer_GWAS_filter_loci"
+author: "Cécile Lorrain"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    keep_md: true
+---
+
+```{r setup, message = F, warning = F}
+library(tximportData)
+library(tximport)
+library(tidyverse)
+library(ape)
+library(RColorBrewer)
+library(pheatmap)
+library(ggpubr)
+library(WGCNA)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+
+# Kmer fitlering reference-free
+
+### Step 0: Concatentate the significant kmers per phenotype, this will give the total number of significant kmers (repeated, multi-mapped or unique)
+
+```{bash, eval = F}
+# Define the output file
+output_file="/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/step0_allkmers_pass_threshold_10per_for_fetch.blast.tsv"
+
+# Clear the output file if it already exists
+> "$output_file"
+
+# Set a flag for including headers
+header_included=false
+
+# Loop over each directory and concatenate files
+for dir in /Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/only_signif_phenotypes/Silvias_GWAS_output_dir_*/kmers/; do
+    # Get the file name
+    file="${dir}/pass_threshold_10per"
+    
+    # Get the directory name to add as a column (basename will extract just the directory part)
+    dir_name=$(basename "$(dirname "$dir")")
+    
+    # Check if the file exists
+    if [[ -f "$file" ]]; then
+        # If headers haven't been included, add the header from the first file and add a new "Source" column
+        if [[ "$header_included" == false ]]; then
+            # Add the header line with "Source" as the new column
+            awk 'NR==1 {print $0 "\tSource"}' "$file" >> "$output_file"
+            header_included=true
+        fi
+
+        # Add data rows, appending the directory name to each line, skipping the header
+        awk -v source="$dir_name" 'NR>1 {print $0 "\t" source}' "$file" >> "$output_file"
+    fi
+done
+
+echo "Concatenation complete. Output saved to $output_file."
+
+```
+
+This gives us the total number of significant kmers throughout all phenotypes that pass the 10 percent threshold. This file contain all kmers so there is some redundancy. We will now filter the unique kmers; meaning the kmers sequences.
+
+### Step 1: List the "unique" kmers
+  
+  The kmers-gwas analysis attributes a kmer-id as "rs" per GWAS, meaning that the same kmers can be found in different GWAS.
+  The first step is list the different unique kmers based on their sequence. For this, I used the following code:
+  
+```{r}
+# Read the concatenated file
+all_kmers <- read.delim("/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/step0_allkmers_pass_threshold_10per_for_fetch.blast.tsv")
+
+# Add a new column 'phenotype' by extracting everything after 'Silvias_GWAS_output_dir_' in the 'Source' column
+all_kmers$phenotype <- sub(".*Silvias_GWAS_output_dir_", "", all_kmers$Source)
+
+# Split the 'rs' column into two columns, 'rs_sequence' and 'rs_number'
+all_kmers <- transform(all_kmers, 
+                       rs_sequence = sub("_.*", "", rs), 
+                       rs_number = as.numeric(sub(".*_", "", rs)))
+
+# Display the first few rows to check the result
+head(all_kmers)
+
+# Filter for unique rows based on 'rs_sequence' while keeping all columns
+unique_kmers <- all_kmers %>% 
+  distinct(rs_sequence, .keep_all = TRUE)%>%
+  arrange(rs_sequence)
+
+# Add a unique ID column with format "kmer0001", "kmer0002", etc.
+unique_kmers <- unique_kmers %>%
+  dplyr::mutate(kmer_shortID = sprintf("kmer%04d", row_number()))
+write.table(unique_kmers, "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/step1_unique_kmers.tsv", sep = "\t", row.names = FALSE)
+
+
+#let's add the temperature data:
+raw_signif_kmers <- left_join(all_kmers, unique_kmers[,c(12,14)]) %>%
+  mutate(temp = case_when(
+    grepl("18C", phenotype) ~ 18,
+    grepl("30C", phenotype) ~ 30,
+    grepl("0C", phenotype) ~ 0,
+    TRUE ~ NA_real_  # Use NA if no match is found
+  ))
+```
+
+## Step 2: Filter the kmers that are found in the control conditions 
+  
+  We can put the "control" aside but it could be interesting to see if some specific kmers are found in the control conditions.
+
+```{r}
+kmers_common_control_or_only_in_control <- raw_signif_kmers %>%
+  # Group by kmer_shortID to check conditions within each group
+  dplyr::group_by(kmer_shortID) %>%
+  # Create flags for common control or only in 18
+  dplyr::mutate(
+    # Check if any temp == 18 and any of temp == 0 or temp == 30
+    common_control = any(temp == 18) & any(temp == 0 | temp == 30),
+    # Check if all occurrences of kmer_shortID are only in temp == 18
+    only_in_18 = all(temp == 18)
+  ) %>%
+  # Filter for kmer_shortIDs that are either common_control or only_in_18
+  dplyr::filter(common_control | only_in_18) %>%
+  # Ungroup the data to remove grouping
+  ungroup()
+
+kmers_only_in_shocks <- anti_join(raw_signif_kmers, kmers_common_control_or_only_in_control)
+
+#count kmers per phenotype
+kmers_per_phenotype <- raw_signif_kmers %>%
+  dplyr::group_by(phenotype) %>%
+  dplyr::summarise(num_kmers_raw = n_distinct(kmer_shortID))
+kmers_per_phenotype1 <- kmers_only_in_shocks %>%
+  dplyr::group_by(phenotype) %>%
+  dplyr::summarise(num_kmers_only_in_shocks = n_distinct(kmer_shortID))
+kmers_per_phenotype <- left_join(kmers_per_phenotype, kmers_per_phenotype1)
+```
+
+
+## Step 3: Extract the genes from gff and concatenate into a pagenome_annotation" gff file
+
+ I will add the pangenome.gff and the orthogroups tables in the drive so you don't have to re-create it.
+
+```{bash, eval = F}
+# Extract the genes from GFF
+for file in *.gff3; do
+  awk '$3 == "mRNA" || $3 == "CDS" {print $0}' "$file" > "${file%.gff3}_mRNA_CDS.gff3"
+done
+
+# Concatenate the GFF files
+cat *_mRNA_CDS.gff3 > pangenome_annotation.gff3
+
+# Convert GFF to BED format with columns: 1=seqname, 4=start, 5=end, 7=strand, 9=attributes
+awk -v OFS="\t" '$3 == "mRNA" || $3 == "CDS" {print $1, $4-1, $5, ".", ".", $7}' pangenome_annotation.gff3 > all_genes_pangenome.bed
+
+# Sort the BED file
+sort -k1,1 -k2,2n all_genes_pangenome.bed > all_genes_pangenome_sorted.bed
+
+# Standardize chromosome names if necessary
+sed 's/\(chr_\)\([1-9]\)\([[:space:]]\)/\1\0\2\3/' all_genes_pangenome_sorted.bed > all_genes_pangenome_sorted_standardized.bed
+
+```
+
+## Step 5: Concatenate the Kmer GWAS filter loci after mapping onto the 19 pangenome references
+
+```{python}
+import os
+import pandas as pd
+import glob
+
+# Base directory containing all target directories
+base_dir = "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/only_signif_phenotypes/"
+
+# Strains to exclude
+exclude_strains = ["08STCH015", "08STCZ015", "08STF040", "09STD078"]
+
+# Get list of directories starting with "Silvias_GWAS_output_dir_"
+directories = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d)) and d.startswith("Silvias_GWAS_output_dir_")]
+
+# Loop over each directory and concatenate files
+for directory in directories:
+    dir_path = os.path.join(base_dir, directory)
+    output_file = os.path.join(base_dir, f"allrefs_significant_kmers10perc_{directory}.tsv")
+    
+    # Find all significant_kmers_blast_*.tsv files in the directory, excluding specified strains
+    files_to_concat = []
+    for file in glob.glob(os.path.join(dir_path, "significant_kmers_blast_*.tsv")):
+        # Check if file contains any excluded strain names
+        if not any(exclude_strain in file for exclude_strain in exclude_strains):
+            files_to_concat.append(file)
+    
+    # Concatenate files if any files remain after filtering
+    if files_to_concat:
+        # Read all files into a list of dataframes and concatenate
+        dfs = [pd.read_csv(file, sep='\t') for file in files_to_concat]
+        combined_df = pd.concat(dfs, ignore_index=True)
+        
+        # Save to output file
+        combined_df.to_csv(output_file, sep='\t', index=False)
+        print(f"Concatenated {len(files_to_concat)} files into {output_file}")
+    else:
+        print(f"No eligible files found in {directory} after filtering out excluded strains.")
+```
+
+## Step 6: Extract the significant, unique kmers FOR THE SHOCKS (delete the empty files before running)
+
+```{r}
+# Define the input directory
+input_dir <- "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/only_signif_phenotype/"
+
+# List files that match the pattern with 0C, 18C, or 30C in their names
+files <- list.files(input_dir, pattern = "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_*\\.tsv$", full.names = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+### Test with one file
+# Path to input directory and output directory
+input_dir <- "~/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/only_signif_phenotypes/"
+output_dir <- "~/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/"
+
+# Specific file for testing
+file <- "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_GrowthRate0C.tsv"
+
+# Generate dynamic variable name based on the file name
+file_shortname <- str_extract(basename(file), "(?<=allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_).*")
+
+# Read data
+gwas_data <- read.table(file.path(input_dir, file), header = TRUE, sep = "\t")
+
+# Process data
+gwas_data <- gwas_data %>%
+  dplyr::mutate(genome = str_extract(chromosome, "^[^.]+")) %>%
+  dplyr::left_join(kmers_only_in_shocks[,c(2,10,11,12,14,15)]) %>%  # Adjust join column if needed
+  na.omit() %>%
+  dplyr::mutate(position_end = position + 31)
+
+# Uniquely mapped kmers per reference
+counts <- gwas_data %>%
+  dplyr::group_by(kmer_shortID, genome) %>%
+  dplyr::tally(name = "n_kmer") %>%
+  dplyr::filter(n_kmer < 2)
+
+gwas_data_unique_map <- gwas_data %>%
+  dplyr::left_join(counts, by = c("kmer_shortID", "genome")) %>%
+  na.omit()
+
+# Count kmers per chromosome
+counts_data <- gwas_data_unique_map %>%
+  dplyr::group_by(chromosome) %>%
+  dplyr::tally(name = "n_kmer_total") %>%
+  dplyr::filter(n_kmer_total > 1)
+
+gwas_data_unique_map <- gwas_data_unique_map %>%
+  dplyr::left_join(counts_data) %>%
+  na.omit()
+
+# Ensure the data is sorted by chromosome and position
+gwas_data_unique_map <- gwas_data_unique_map %>%
+  arrange(chromosome, position)
+
+# Identify gaps between consecutive positions
+counts_window <- gwas_data_unique_map %>%
+  dplyr::group_by(chromosome) %>%
+  # Create columns to check gaps between consecutive rows (forward and backward)
+  dplyr::mutate(
+    next_position = lead(position),  # Get the position of the next row
+    gap = next_position - position_end,  # Calculate the gap between the current position_end and the next position
+    prev_position_end = lag(position_end),  # Get the position_end of the previous row
+    gap2 = position - prev_position_end,  # Calculate the gap between the current position and the previous position_end
+    new_window = ifelse(gap > 10000 | gap2 > 10000 | is.na(gap) | is.na(gap2), 1, 0)  # Flag new window if either gap is greater than 10000 or if it's the last row
+  ) %>%
+  # Create a cumulative window ID based on the new_window flag
+  dplyr::mutate(
+    window_id = cumsum(new_window) + 1  # Assign a unique ID to each window, starting at 1
+  ) %>%
+  # Recalculate position_min and position_max within each window
+  dplyr::group_by(chromosome, window_id) %>%
+  dplyr::mutate(
+    position_min = min(position),
+    position_max = max(position_end),
+    window_size = position_max - position_min
+  ) %>%
+  # Ungroup after processing
+  dplyr::ungroup()
+
+# Write output
+output_file <- file.path(output_dir, paste0(file_shortname, "_gwas_kmers.txt"))
+write.table(counts_window[c("rs","sseqid","position","chr","ps","n_miss","allele1","allele0","af","l_mle","p_lrt","log10_pval","chromosome","genome","Source","phenotype","rs_sequence","kmer_shortID","temp","position_end","n_kmer_total","position_min","position_max","window_size")], output_file, sep = "\t", row.names = FALSE)
+
+# Print output message
+print(paste("Processed and saved:", output_file))
+
+```
+
+```{r, message=F, warning=F}
+# Path to input directory and output directory
+input_dir <- "~/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/only_signif_phenotypes/"
+output_dir <- "~/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/"
+
+# List of files
+files <- c(
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_GrowthRate0C.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Interceptx0C.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Interceptx30C.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Mean_grey0C_08dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Mean_grey0C_19dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Mean_grey30C_08dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius0C_08dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius0C_15dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius30C_08dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius30C_12dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Ratio0C.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_SporespermL30C.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Std_grey0C_08dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Std_grey0C_15dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Std_grey0C_19dpi.tsv",
+  "allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Std_grey30C_08dpi.tsv"
+)
+
+# Function to process each file
+process_file <- function(file) {
+  # Generate dynamic variable name based on the file name
+  file_shortname <- str_extract(basename(file), "(?<=allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_).*")
+
+  # Read data
+  gwas_data <- read.table(file.path(input_dir, file), header = TRUE, sep = "\t")
+
+  # Process data
+  gwas_data <- gwas_data %>%
+    dplyr::mutate(genome = str_extract(chromosome, "^[^.]+")) %>%
+    dplyr::left_join(kmers_only_in_shocks[,c(2,10,11,12,14,15)]) %>%  # Adjust join column if needed
+    na.omit() %>%
+    dplyr::mutate(position_end = position + 31)
+
+  # Uniquely mapped kmers per reference
+  counts <- gwas_data %>%
+    dplyr::group_by(kmer_shortID, genome) %>%
+    dplyr::tally(name = "n_kmer") %>%
+    dplyr::filter(n_kmer < 2)
+
+  gwas_data_unique_map <- gwas_data %>%
+    dplyr::left_join(counts, by = c("kmer_shortID", "genome")) %>%
+    na.omit()
+
+  # Count kmers per chromosome
+  counts_data <- gwas_data_unique_map %>%
+    dplyr::group_by(chromosome) %>%
+    dplyr::tally(name = "n_kmer_total") %>%
+    dplyr::filter(n_kmer_total > 1)
+
+  gwas_data_unique_map <- gwas_data_unique_map %>%
+    dplyr::left_join(counts_data) %>%
+    na.omit()
+
+  # Ensure the data is sorted by chromosome and position
+  gwas_data_unique_map <- gwas_data_unique_map %>%
+    arrange(chromosome, position)
+
+  # Identify gaps between consecutive positions
+  counts_window <- gwas_data_unique_map %>%
+    dplyr::group_by(chromosome) %>%
+    # Create columns to check gaps between consecutive rows (forward and backward)
+    dplyr::mutate(
+      next_position = lead(position),  # Get the position of the next row
+      gap = next_position - position_end,  # Calculate the gap between the current position_end and the next position
+      prev_position_end = lag(position_end),  # Get the position_end of the previous row
+      gap2 = position - prev_position_end,  # Calculate the gap between the current position and the previous position_end
+      new_window = ifelse(gap > 10000 | gap2 > 10000 | is.na(gap) | is.na(gap2), 1, 0)  # Flag new window if either gap is greater than 10000 or if it's the last row
+    ) %>%
+    # Create a cumulative window ID based on the new_window flag
+    dplyr::mutate(
+      window_id = cumsum(new_window) + 1  # Assign a unique ID to each window, starting at 1
+    ) %>%
+    # Recalculate position_min and position_max within each window
+    dplyr::group_by(chromosome, window_id) %>%
+    dplyr::mutate(
+      position_min = min(position),
+      position_max = max(position_end),
+      window_size = position_max - position_min
+    ) %>%
+    # Ungroup after processing
+    dplyr::ungroup()
+
+  # Write output
+  output_file <- file.path(output_dir, paste0(file_shortname, "_gwas_kmers.txt"))
+  write.table(counts_window[c("rs", "sseqid", "position", "chr", "ps", "n_miss", "allele1", "allele0", "af", 
+                             "l_mle", "p_lrt", "log10_pval", "chromosome", "genome", "Source", "phenotype", 
+                             "rs_sequence", "kmer_shortID", "temp", "position_end", "n_kmer_total", "position_min", 
+                             "position_max", "window_size")], output_file, sep = "\t", row.names = FALSE)
+
+  # Print output message
+  print(paste("Processed and saved:", output_file))
+}
+
+# Apply the function to each file in the list
+purrr::walk(files, process_file)
+
+```
+
+## Step 7: Extract the significant, unique kmers FOR THE CONTROL
+
+```{r, message=F, warning=F}
+# Path to input directory and output directory
+input_dir <- "~/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/only_signif_phenotypes/"
+output_dir <- "~/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/"
+
+# List of files
+files <- c("allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_GrowthRate18C.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Std_grey18C_08dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Std_grey18C_12dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Std_grey18C_19dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_SporespermL18C.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius18C_08dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius18C_12dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius18C_15dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Radius18C_19dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Mean_grey18C_19dpi.tsv",
+"allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_Mean_grey18C_08dpi.tsv")
+
+# Function to process each file
+process_file <- function(file) {
+  # Generate dynamic variable name based on the file name
+  file_shortname <- str_extract(basename(file), "(?<=allrefs_significant_kmers10perc_Silvias_GWAS_output_dir_).*")
+
+  # Read data
+  gwas_data <- read.table(file.path(input_dir, file), header = TRUE, sep = "\t")
+
+  # Process data
+  gwas_data <- gwas_data %>%
+    dplyr::mutate(genome = str_extract(chromosome, "^[^.]+")) %>%
+    dplyr::left_join(kmers_common_control_or_only_in_control[,c(2,10,11,12,14,15)]) %>%  # Adjust join column if needed
+    na.omit() %>%
+    dplyr::mutate(position_end = position + 31)
+
+  # Uniquely mapped kmers per reference
+  counts <- gwas_data %>%
+    dplyr::group_by(kmer_shortID, genome) %>%
+    dplyr::tally(name = "n_kmer") %>%
+    dplyr::filter(n_kmer < 2)
+
+  gwas_data_unique_map <- gwas_data %>%
+    dplyr::left_join(counts, by = c("kmer_shortID", "genome")) %>%
+    na.omit()
+
+  # Count kmers per chromosome
+  counts_data <- gwas_data_unique_map %>%
+    dplyr::group_by(chromosome) %>%
+    dplyr::tally(name = "n_kmer_total") %>%
+    dplyr::filter(n_kmer_total > 1)
+
+  gwas_data_unique_map <- gwas_data_unique_map %>%
+    dplyr::left_join(counts_data) %>%
+    na.omit()
+
+  # Ensure the data is sorted by chromosome and position
+  gwas_data_unique_map <- gwas_data_unique_map %>%
+    arrange(chromosome, position)
+
+  # Identify gaps between consecutive positions
+  counts_window <- gwas_data_unique_map %>%
+    dplyr::group_by(chromosome) %>%
+    # Create columns to check gaps between consecutive rows (forward and backward)
+    dplyr::mutate(
+      next_position = lead(position),  # Get the position of the next row
+      gap = next_position - position_end,  # Calculate the gap between the current position_end and the next position
+      prev_position_end = lag(position_end),  # Get the position_end of the previous row
+      gap2 = position - prev_position_end,  # Calculate the gap between the current position and the previous position_end
+      new_window = ifelse(gap > 10000 | gap2 > 10000 | is.na(gap) | is.na(gap2), 1, 0)  # Flag new window if either gap is greater than 10000 or if it's the last row
+    ) %>%
+    # Create a cumulative window ID based on the new_window flag
+    dplyr::mutate(
+      window_id = cumsum(new_window) + 1  # Assign a unique ID to each window, starting at 1
+    ) %>%
+    # Recalculate position_min and position_max within each window
+    dplyr::group_by(chromosome, window_id) %>%
+    dplyr::mutate(
+      position_min = min(position),
+      position_max = max(position_end),
+      window_size = position_max - position_min
+    ) %>%
+    # Ungroup after processing
+    dplyr::ungroup()
+
+  # Write output
+  output_file <- file.path(output_dir, paste0(file_shortname, "_gwas_kmers.txt"))
+  write.table(counts_window[c("rs", "sseqid", "position", "chr", "ps", "n_miss", "allele1", "allele0", "af", 
+                             "l_mle", "p_lrt", "log10_pval", "chromosome", "genome", "Source", "phenotype", 
+                             "rs_sequence", "kmer_shortID", "temp", "position_end", "n_kmer_total", "position_min", 
+                             "position_max", "window_size")], output_file, sep = "\t", row.names = FALSE)
+
+  # Print output message
+  print(paste("Processed and saved:", output_file))
+}
+
+# Apply the function to each file in the list
+purrr::walk(files, process_file)
+```
+
+  From this part, we have the significant, unique kmers for the control and the shocks. We can now merge the kmers with the orthogroups and identify the cross-references loci. 
+
+
+## Step 8: Convert to bed and use bedtools closest to find the closest gene and TE
+
+```{bash, eval = F}
+#!/bin/bash
+
+# List of input files
+files=(
+"Std_grey18C_19dpi.tsv_gwas_kmers.txt"
+"Interceptx0C.tsv_gwas_kmers.txt"
+"Interceptx30C.tsv_gwas_kmers.txt"
+"Mean_grey0C_19dpi.tsv_gwas_kmers.txt"
+"Mean_grey18C_08dpi.tsv_gwas_kmers.txt"
+"Mean_grey18C_19dpi.tsv_gwas_kmers.txt"
+"Mean_grey30C_08dpi.tsv_gwas_kmers.txt"
+"Radius0C_08dpi.tsv_gwas_kmers.txt"
+"Radius0C_15dpi.tsv_gwas_kmers.txt"
+"Radius18C_08dpi.tsv_gwas_kmers.txt"
+"Radius18C_15dpi.tsv_gwas_kmers.txt"
+"Ratio0C.tsv_gwas_kmers.txt"
+"SporespermL18C.tsv_gwas_kmers.txt"
+"SporespermL30C.tsv_gwas_kmers.txt"
+"Std_grey0C_08dpi.tsv_gwas_kmers.txt"
+"Std_grey18C_08dpi.tsv_gwas_kmers.txt"
+"Std_grey18C_12dpi.tsv_gwas_kmers.txt"
+)
+
+# Loop through each file
+for file in "${files[@]}"; do
+  # Define output filename
+  output_file="${file%.txt}.bed"
+
+  # Use awk to extract columns, remove quotes, and omit the header
+  awk 'NR > 1 {
+    gsub(/"/, "", $13);
+    gsub(/"/, "", $22);
+    gsub(/"/, "", $23);
+    gsub(/"/, "", $18);
+    gsub(/"/, "", $24);
+    print $13, $22, $23, $18, $24
+  }' OFS="\t" "$file" > "$output_file"
+
+  echo "Processed and created: $output_file"
+done
+```
+
+```{bash, eval = F}
+#!/bin/bash
+
+# Directory paths
+#sed 's/\(chr_\)\([1-9]\)\([[:space:]]\)/\1\0\2\3/' all_genes_pangenome_sorted_corrected.bed > all_genes_pangenome_sorted_standardized.bed
+input_dir="/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/"     # Update this with your .bed files' directory path
+output_dir="/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/"            # Update with your desired output directory path
+orthologs_file="/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/ProtOthro/final_long_table_proteinOrtho.tsv"
+
+# Loop over each .bed file
+for bedfile in *.bed 
+do
+  # Define filenames
+  base_name=$(basename "$bedfile" .bed)
+  sorted_bed="$output_dir/${base_name}_sorted.bed"
+  closest_bed="$output_dir/${base_name}_closest_genes.bed"
+  merged_output="$output_dir/${base_name}_merged_with_orthologs.bed"
+
+  # Sort bed file
+  sort -k1,1 -k2,2n "$input_dir/$bedfile" > "$sorted_bed"
+
+  # Run bedtools closest with filtering for distance within 1kb
+  bedtools closest -a "$sorted_bed" -b /Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/bed_files/all_genes_pangenome_standardized_sorted.bed -d > "$closest_bed"
+
+  echo "Processed and merged: $bedfile"
+done
+```
+
+```{bash, eval = F}
+#!/bin/bash
+
+# Directory containing your *.tsv_gwas_kmers_sorted.bed files
+input_dir="/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/" 
+
+# Reference BED file for bedtools closest
+reference_bed="/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/ref_annotations/all_pangenome_TE_2023_standardized_sorted.bed"
+
+# Output directory (optional: set to the same as input_dir if no separate output directory is needed)
+output_dir="$input_dir"  # Adjust this if you want a different output directory
+
+# Loop through each .tsv_gwas_kmers_sorted.bed file in the directory
+for bed_file in "$input_dir"/*.tsv_gwas_kmers_sorted.bed; do
+    # Extract the filename without extension
+    filename=$(basename "$bed_file" .tsv_gwas_kmers_sorted.bed)
+    
+    # Define the output file path
+    output_file="$output_dir/${filename}_TE_closest.bed"
+    
+    # Run bedtools closest and filter for distance == 0
+    bedtools closest -a "$bed_file" -b "$reference_bed" -d | awk '$NF == 0' > "$output_file"
+    
+    echo "Processed $bed_file and saved overlapping TEs to $output_file"
+done
+
+echo "All files processed!"
+
+```
+
+  Now wa have the closest genes and TEs for each kmer. We can now merge with orthogroups and identify cross-references loci.
+
+## Step 9: Merge with orthogrroups and identify cross-refs loci
+
+"Common Region": If any overlapping kmer windows (even with different kmer_shortIDs) share the same orthogroup(s), it will be classified as "common." This requires checking for overlapping regions and determining if they share the same orthogroups.
+
+"Specific Region": If there is no overlap or the orthogroups are unique to each kmer_shortID, it will be classified as "specific."
+
+  After that I still re-examined the files manually to curate the loci. 
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Define input and output directories, column headers, and path to the ortho data file
+input_dir <- "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/gene_closest_bed/"
+output_dir <- "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/combined_output/"
+ortho_file <- "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/ProtOthro/final_long_table_proteinOrtho.tsv"
+
+# Define column headers for the bed data
+headers <- c("chromosome", "position_min", "position_max", "kmer_shortID", "window_size",
+             "chromosome_gff", "start", "end", "strand", "geneID", "distance_sig_kmers")
+
+# Load Ortho data file and select relevant columns
+ortho_data <- read.table(ortho_file, header = TRUE, sep = "\t")
+ortho_data <- ortho_data[, c("geneID", "OrthoID")]
+
+# List of files to process
+files <- list(
+"Std_grey18C_19dpi.tsv_gwas_kmers_closest_genes.bed",
+"Std_grey18C_12dpi.tsv_gwas_kmers_closest_genes.bed",
+"Std_grey18C_08dpi.tsv_gwas_kmers_closest_genes.bed",
+"Std_grey0C_08dpi.tsv_gwas_kmers_closest_genes.bed",
+"SporespermL30C.tsv_gwas_kmers_closest_genes.bed",
+"SporespermL18C.tsv_gwas_kmers_closest_genes.bed",
+"Radius18C_15dpi.tsv_gwas_kmers_closest_genes.bed",
+"Ratio0C.tsv_gwas_kmers_closest_genes.bed",
+"Radius18C_08dpi.tsv_gwas_kmers_closest_genes.bed",
+"Radius0C_15dpi.tsv_gwas_kmers_closest_genes.bed",
+"Radius0C_08dpi.tsv_gwas_kmers_closest_genes.bed",
+"Mean_grey30C_08dpi.tsv_gwas_kmers_closest_genes.bed",
+"Mean_grey18C_19dpi.tsv_gwas_kmers_closest_genes.bed",
+"Mean_grey18C_08dpi.tsv_gwas_kmers_closest_genes.bed",
+"Mean_grey0C_19dpi.tsv_gwas_kmers_closest_genes.bed",
+"Interceptx30C.tsv_gwas_kmers_closest_genes.bed",
+"Interceptx0C.tsv_gwas_kmers_closest_genes.bed"
+)
+
+# Process each file in the list
+for (file in files) {
+  file_path <- file.path(input_dir, file)
+  if (!file.exists(file_path)) {
+    message(paste("File does not exist:", file_path))
+    next  # Skip this file if it doesn't exist
+  }
+  # Continue with processing as before...
+}
+
+for (file in files) {
+  # Construct the file path and read the .bed file with headers
+  file_path <- file.path(input_dir, file)
+  bed_data <- read.table(file_path, header = FALSE, sep = "\t", col.names = headers)
+  
+  # Extract phenotype from file name and add as a new column
+  phenotype <- sub("(.*)\\.tsv_gwas_kmers_closest_genes\\.bed", "\\1", file)
+  bed_data$phenotype <- phenotype
+  
+  # Separate the `chromosome_gff` column into `reference` and `CHR`
+  bed_data <- bed_data %>%
+    separate(chromosome_gff, into = c("reference", "CHR"), sep = "\\.chr_", remove = FALSE)
+  
+  # Merge bed data with ortho data by geneID
+  merged_data <- merge(bed_data, ortho_data, by = "geneID", all.x = TRUE)
+  
+  # Summarize data by grouping and counting `kmer_shortID`
+  merged_data_summarised <- merged_data %>%
+    dplyr::group_by(reference, CHR, chromosome, position_min, position_max, kmer_shortID, window_size, geneID, start, end, strand, distance_sig_kmers, phenotype, OrthoID) %>%
+    dplyr::summarise(kmer_count = n(), .groups = 'drop')
+  
+  # Define the output file path and write the summarized data to CSV
+  output_file <- file.path(output_dir, paste0(phenotype, "_summarized.csv"))
+  write.csv(merged_data_summarised, output_file, row.names = FALSE)
+}
+```
+
+ Merge with TEs; this is only applied if TEs are found overlapping with the kmers. 
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(readr)
+
+# Directories
+combined_dir <- "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/combined_output/"
+te_dir <- "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/TE_onverelap_bed/"
+output_dir <- "/Users/lorrain/Desktop/PROJECTS/5_Silvia_thesis/Chapter2/Kmers/Results_from_Alice/CL_final_tables_shockgwas/output_gwas_loci/new/final_merged_output_if_TEs_found/"
+
+te_headers <- c("chromosome", "position_min", "position_max", "kmer_shortID", "window_size", 
+                "chromosome_gff_TE", "TE_start", "TE_end", "TE_ID", "distance_sig_kmers")
+
+# Create output directory if it doesn't exist
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# List all summarized files with full paths
+summarized_files <- file.path(combined_dir, c(
+  "Std_grey18C_19dpi_summarized.csv",
+  "Std_grey18C_08dpi_summarized.csv",
+  "Std_grey0C_08dpi_summarized.csv",
+  "Radius18C_15dpi_summarized.csv",
+  "Radius18C_08dpi_summarized.csv",
+  "Radius0C_08dpi_summarized.csv",
+  "Mean_grey30C_08dpi_summarized.csv",
+  "Mean_grey18C_19dpi_summarized.csv",
+  "Mean_grey18C_08dpi_summarized.csv",
+  "Mean_grey0C_19dpi_summarized.csv",
+  "Interceptx30C_summarized.csv"
+))
+
+# List all TE files with full paths
+te_files <- file.path(te_dir, c(
+  "Std_grey18C_19dpi_TE_closest.bed",
+  "Std_grey18C_08dpi_TE_closest.bed",
+  "Std_grey0C_08dpi_TE_closest.bed",
+  "Radius18C_15dpi_TE_closest.bed",
+  "Radius18C_08dpi_TE_closest.bed",
+  "Radius0C_08dpi_TE_closest.bed",
+  "Mean_grey30C_08dpi_TE_closest.bed",
+  "Mean_grey18C_19dpi_TE_closest.bed",
+  "Mean_grey18C_08dpi_TE_closest.bed",
+  "Mean_grey0C_19dpi_TE_closest.bed",
+  "Interceptx30C_TE_closest.bed"
+))
+
+# Iterate over each summarized file and its corresponding TE file
+for (summarized_file in summarized_files) {
+  
+  # Load summarized CSV file
+  summarized_df <- read_csv(summarized_file)
+  
+  # Find corresponding TE file
+  te_file <- gsub("_summarized\\.csv", "_TE_closest.bed", basename(summarized_file))
+  te_path <- file.path(te_dir, te_file)
+  
+  if (file.exists(te_path)) {
+    # Load TE file with specified headers
+    te_df <- read.table(te_path, header = FALSE, sep = "\t", col.names = te_headers, stringsAsFactors = FALSE)
+  
+    
+    # Perform the join based on shared columns
+    merged_df <- dplyr::left_join(summarized_df, te_df, by = c("chromosome", "position_min", "position_max", "kmer_shortID", "window_size"))
+    
+    # Output file path
+    output_file <- file.path(output_dir, paste0("final_", basename(summarized_file)))
+    
+    # Save the merged dataframe
+    write_csv(merged_df, output_file)
+    
+    cat("Merged file saved:", output_file, "\n")
+    
+  } else {
+    cat("TE file not found for:", summarized_file, "\n")
+  }
+}
+
+cat("All files processed.\n")
+
+
+```
+
+
+
+
